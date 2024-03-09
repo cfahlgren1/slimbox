@@ -1,19 +1,26 @@
 import base64
+import json
 import os
+import quopri
 import re
 from datetime import datetime, timedelta
+from typing import Optional
+
 from bs4 import BeautifulSoup
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-import quopri
+from pydantic import BaseModel
+from supabase import create_client, Client
+
 import tiktoken
-from typing import Optional
 
 enc = tiktoken.get_encoding("cl100k_base")
 
 # Gmail API scopes for reading the email and creating labels
-SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.modify",
+]
 
 
 def clean_whitespace(text):
@@ -175,10 +182,12 @@ def get_email_body_and_unsubscribe_link(
                 break  # Stop processing if the limit is reached
 
         elif "parts" in part:  # Nested parts
-            nested_body, nested_link, nested_link_count = (
-                get_email_body_and_unsubscribe_link(
-                    part.get("parts", []), prefer_html, token_encoder, snippet
-                )
+            (
+                nested_body,
+                nested_link,
+                nested_link_count,
+            ) = get_email_body_and_unsubscribe_link(
+                part.get("parts", []), prefer_html, token_encoder, snippet
             )
             body += " " + nested_body
             unsubscribe_link = nested_link or unsubscribe_link
@@ -231,9 +240,13 @@ def find_unsubscribe_link(html: str) -> Optional[str]:
 
 
 # read emails in the last 1 day by default
-def read_emails(service, days=1):
-    after_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    query = f"after:{after_date} -from:me"  # Exclude emails sent by you
+def read_emails(service, days=7, timestamp=None):
+    if timestamp is not None:
+        after_date = timestamp.strftime("%Y-%m-%d")
+    else:
+        after_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    query = f"after:{after_date} -from:me"
 
     email_contents = []
     page_token = None
@@ -258,9 +271,11 @@ def read_emails(service, days=1):
             headers = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
             parts = msg["payload"].get("parts", [msg["payload"]])
             snippet = msg.get("snippet", "")
-            email_body, unsubscribe_link, num_links = (
-                get_email_body_and_unsubscribe_link(parts, snippet=snippet)
-            )
+            (
+                email_body,
+                unsubscribe_link,
+                num_links,
+            ) = get_email_body_and_unsubscribe_link(parts, snippet=snippet)
 
             # Conditionally include Cc and Bcc if they exist
             email_headers = [
@@ -294,3 +309,47 @@ def read_emails(service, days=1):
             break
 
     return email_contents
+
+
+class OAuth2Token(BaseModel):
+    refresh_token: str
+    access_token: str
+
+
+def retrieve_and_decrypt_tokens(user_id: str) -> Optional[OAuth2Token]:
+    """
+    Retrieve and decrypt OAuth tokens for a given user.
+
+    Args:
+    user_id (str): Unique identifier for the user.
+
+    Returns:
+    Optional[dict]: A dictionary containing the decrypted OAuth tokens or None if not found.
+    """
+    supabase: Client = create_client(
+        os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY")
+    )
+
+    result = supabase.table("users").select("tokens").eq("id", user_id).execute()
+    tokens_data = result.data
+
+    if not tokens_data or not tokens_data[0].get("tokens"):
+        return None
+
+    token_data = supabase.rpc(
+        "decrypt_secret", {"secret_id": tokens_data[0]["tokens"]}
+    ).execute()
+
+    # Check if the decryption was successful
+    if not token_data.data:
+        return None
+
+    decrypted_secret = token_data.data[0].get("decrypted_secret")
+    if not decrypted_secret:
+        return None
+
+    oauth_tokens = json.loads(decrypted_secret)
+    return {
+        "access_token": oauth_tokens.get("access_token"),
+        "refresh_token": oauth_tokens.get("refresh_token"),
+    }
