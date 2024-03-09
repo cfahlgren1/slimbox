@@ -76,6 +76,13 @@ async def read_and_label_emails(user_id: str):
 
         classification_results = await asyncio.gather(*classification_tasks)
 
+        if len(emails_to_classify) == 0:
+            console.print(
+                f"No emails to classify for user {user_id}",
+                style="bold yellow",
+            )
+            return
+
         # create labels and assign to emails
         for email, classification in zip(emails_to_classify, classification_results):
             # skip emails that are not classified

@@ -1,7 +1,6 @@
 from supabase import create_client, Client
 from enqueue.tasks import read_and_label_emails
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
 from redis import Redis
 from rq import Queue
 from rich.console import Console
