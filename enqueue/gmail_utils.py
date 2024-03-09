@@ -240,12 +240,8 @@ def find_unsubscribe_link(html: str) -> Optional[str]:
 
 
 # read emails in the last 1 day by default
-def read_emails(service, days=7, timestamp=None):
-    if timestamp is not None:
-        after_date = timestamp.strftime("%Y-%m-%d")
-    else:
-        after_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-
+def read_emails(service, days=1):
+    after_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     query = f"after:{after_date} -from:me"
 
     email_contents = []

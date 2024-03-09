@@ -46,8 +46,8 @@ async def fetch_and_enqueue_users():
 
         for row in active_users:
             user_id = row["user_id"]
-            last_run_at = row["last_run_at"] or datetime.now() - timedelta(hours=3)
-            task = q.enqueue(read_and_label_emails, user_id, last_run_at)
+            last_run_at = row["last_run_at"] or "Never"
+            task = q.enqueue(read_and_label_emails, user_id)
             enqueued_status = "Yes" if task else "No"
             table.add_row(str(user_id), str(last_run_at), enqueued_status)
 

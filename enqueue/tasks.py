@@ -24,6 +24,9 @@ redis_port = os.getenv("REDIS_PORT", 6379)
 
 supabase: Client = create_client(supabase_url, service_role_key)
 
+# Global cache dictionary to store email ID and its classification
+email_classification_cache = {}
+
 
 def get_labels(user_id: str) -> List[Label]:
     labels_result = (
@@ -50,7 +53,7 @@ def get_label_color_from_classification(
     return None
 
 
-async def read_and_label_emails(user_id: str, last_run_at: str):
+async def read_and_label_emails(user_id: str):
     labels = get_labels(user_id)
     auth_tokens = retrieve_and_decrypt_tokens(user_id)
 
@@ -59,25 +62,30 @@ async def read_and_label_emails(user_id: str, last_run_at: str):
         refresh_token = auth_tokens["refresh_token"]
 
         service = gmail_authenticate(access_token, refresh_token)
-        emails = read_emails(service=service, timestamp=None)
+        emails = read_emails(service=service)
 
         # classify emails in a batch
-        classification_tasks = [
-            classify_email(email["content"], labels) for email in emails
-        ]
+        classification_tasks = []
+        emails_to_classify = []
+
+        for email in emails:
+            # add email to classification queue if not already classified
+            if email["id"] not in email_classification_cache:
+                emails_to_classify.append(email)
+                classification_tasks.append(classify_email(email["content"], labels))
+
         classification_results = await asyncio.gather(*classification_tasks)
 
         # create labels and assign to emails
-        for email, classification in zip(emails, classification_results):
-
+        for email, classification in zip(emails_to_classify, classification_results):
             # skip emails that are not classified
             if classification == "other":
                 continue
 
             color = get_label_color_from_classification(classification, labels)
-
             label_id = create_label(service, classification, color)
             assign_label_to_email(service, email["id"], label_id)
+            email_classification_cache[email["id"]] = classification
 
         # update last_run_at timestamp
         supabase.table("user_cron_schedules").update({"last_run_at": "now()"}).eq(
