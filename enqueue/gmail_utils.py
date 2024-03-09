@@ -178,7 +178,7 @@ def get_email_body_and_unsubscribe_link(
                 )  # Count links in the HTML part
                 body += " " + part_body
 
-            if len(token_encoder.encode(body)) >= 4000:
+            if len(token_encoder.encode(body)) >= 2000:
                 break  # Stop processing if the limit is reached
 
         elif "parts" in part:  # Nested parts
@@ -192,7 +192,7 @@ def get_email_body_and_unsubscribe_link(
             body += " " + nested_body
             unsubscribe_link = nested_link or unsubscribe_link
             link_count += nested_link_count
-            if len(token_encoder.encode(body)) >= 4000:
+            if len(token_encoder.encode(body)) >= 2000:
                 break
 
     body = body.strip() or clean_whitespace(snippet)

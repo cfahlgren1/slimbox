@@ -61,10 +61,12 @@ async def classify_email(content: str, label_descriptions: List[Label]) -> str:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an email assistant that categorizes emails.",
+                    "content": f"You are an email assistant that categorizes emails.",
                 },
-                {"role": "user", "content": f"Label the following email: `{content}`"},
-                {"role": "user", "content": label_options_message},
+                {
+                    "role": "user",
+                    "content": f"{label_options_message}\n\nLabel the following email: `{content}`",
+                },
             ],
         )
 

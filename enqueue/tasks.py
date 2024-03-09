@@ -10,6 +10,8 @@ from enqueue.gmail_utils import (
 )
 from enqueue.classify import classify_email, Label
 from typing import List, Optional
+from redis import Redis
+from rq import Queue
 import asyncio
 import os
 
@@ -20,12 +22,14 @@ console = Console()
 supabase_url = os.getenv("SUPABASE_URL")
 service_role_key = os.getenv("SUPABASE_KEY")
 redis_host = os.getenv("REDIS_HOST", "localhost")
-redis_port = os.getenv("REDIS_PORT", 6379)
+redis_port = int(os.getenv("REDIS_PORT", 6379))
 
 supabase: Client = create_client(supabase_url, service_role_key)
 
-# Global cache dictionary to store email ID and its classification
-email_classification_cache = {}
+redis_conn = Redis(host=redis_host, port=redis_port)
+q = Queue(connection=redis_conn)
+
+supabase: Client = create_client(supabase_url, service_role_key)
 
 
 def get_labels(user_id: str) -> List[Label]:
@@ -70,7 +74,7 @@ async def read_and_label_emails(user_id: str):
 
         for email in emails:
             # add email to classification queue if not already classified
-            if email["id"] not in email_classification_cache:
+            if not redis_conn.exists(f"email_classified:{email['id']}"):
                 emails_to_classify.append(email)
                 classification_tasks.append(classify_email(email["content"], labels))
 
@@ -92,7 +96,7 @@ async def read_and_label_emails(user_id: str):
             color = get_label_color_from_classification(classification, labels)
             label_id = create_label(service, classification, color)
             assign_label_to_email(service, email["id"], label_id)
-            email_classification_cache[email["id"]] = classification
+            redis_conn.set(f"email_classified:{email['id']}", "true")
 
         # update last_run_at timestamp
         supabase.table("user_cron_schedules").update({"last_run_at": "now()"}).eq(
